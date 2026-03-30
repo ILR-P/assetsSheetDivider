@@ -1,73 +1,34 @@
 # Asset Sheet Divider
 
-A web app built with Next.js that helps split or process asset sheets.
+Asset Sheet Divider is a cozy little helper for pixel artists and game devs.
 
-## Share This Project On GitHub
+You drop in sprite sheets, drag across the exact pieces you want, and save clean slices without fighting with manual crop tools.
 
-1. Create a new repository on GitHub (for example: `assetsheetdivider`).
-2. In this project folder, run:
+## What This Tool Is About
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
-git push -u origin main
-```
+This project exists to make sprite prep feel calm and fast.
 
-3. Your project is now online and others can clone it.
+Instead of opening a heavy editor, zooming around, and exporting one piece at a time, you can quickly mark tile-snapped regions, name them, and export everything in one neat bundle.
 
-If this folder already has git history, skip `git init` and just set/update the remote URL.
+## What It Does
 
-## How Other People Can Use It
+- Loads multiple PNG sprite sheets
+- Snaps selections to a 16px grid for clean, consistent cuts
+- Lets you tag slices by furniture type
+- Suggests tidy names like chair_001, chair_002, and so on
+- Keeps saved slices in local storage so your progress stays around
+- Exports all slices into a ZIP grouped by size folders
+- Includes a manifest file with slice coordinates and metadata
 
-1. Clone the repo:
+## Why People Use It
 
-```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
-```
+- Faster asset prep for cozy game projects
+- Cleaner organization for large sprite libraries
+- Less repetitive cropping work
+- Easy handoff to teammates, modders, or content pipelines
 
-2. Install dependencies:
+## The Vibe
 
-```bash
-npm install
-```
+Made for makers who like their tools practical, playful, and a little charming.
 
-3. Run in development:
-
-```bash
-npm run dev
-```
-
-4. Open `http://localhost:3000`.
-
-## Scripts
-
-- `npm run dev` - start local dev server
-- `npm run build` - create production build
-- `npm run start` - run production server
-- `npm run lint` - run ESLint
-
-## Deploy For Public Use
-
-The easiest way is Vercel:
-
-1. Push this repo to GitHub.
-2. Go to Vercel and import the GitHub repository.
-3. Click Deploy.
-
-After deployment, share the Vercel URL so anyone can use the site in their browser.
-
-## Tech Stack
-
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS 4
-- JSZip
-
-## License
-
-Choose a license before public release (MIT is common for open-source projects).
+Small clicks. Clean sheets. Happy sprites.
