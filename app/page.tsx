@@ -1,12 +1,27 @@
 "use client";
 
-import { ChangeEvent, MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import NextImage from "next/image";
 import JSZip from "jszip";
 
-const TILE_SIZE = 16;
+const DEFAULT_TILE_SIZE = 16;
 const LOCAL_STORAGE_KEY = "sprite-slicer-saved-slices-v1";
-const FURNITURE_TYPES = ["sofa", "chair", "drawer", "desk", "bookshelf", "rug", "miscelanious"] as const;
+const FURNITURE_TYPES = [
+  "sofa",
+  "chair",
+  "drawer",
+  "desk",
+  "bookshelf",
+  "rug",
+  "miscelanious",
+] as const;
 
 type FurnitureType = (typeof FURNITURE_TYPES)[number];
 
@@ -68,30 +83,34 @@ function getCellFromMouse(
   event: MouseEvent<HTMLDivElement>,
   sheet: Sheet,
   zoom: number,
+  tileSize: number,
 ) {
   const rect = event.currentTarget.getBoundingClientRect();
   const xPx = (event.clientX - rect.left) / zoom;
   const yPx = (event.clientY - rect.top) / zoom;
-  const maxCol = Math.max(Math.ceil(sheet.width / TILE_SIZE) - 1, 0);
-  const maxRow = Math.max(Math.ceil(sheet.height / TILE_SIZE) - 1, 0);
+  const maxCol = Math.max(Math.ceil(sheet.width / tileSize) - 1, 0);
+  const maxRow = Math.max(Math.ceil(sheet.height / tileSize) - 1, 0);
 
-  const col = Math.min(Math.max(Math.floor(xPx / TILE_SIZE), 0), maxCol);
-  const row = Math.min(Math.max(Math.floor(yPx / TILE_SIZE), 0), maxRow);
+  const col = Math.min(Math.max(Math.floor(xPx / tileSize), 0), maxCol);
+  const row = Math.min(Math.max(Math.floor(yPx / tileSize), 0), maxRow);
 
   return { col, row };
 }
 
-function selectionToRect(selection: DragSelection): Rectangle {
+function selectionToRect(
+  selection: DragSelection,
+  tileSize: number,
+): Rectangle {
   const leftCol = Math.min(selection.startCol, selection.endCol);
   const rightCol = Math.max(selection.startCol, selection.endCol);
   const topRow = Math.min(selection.startRow, selection.endRow);
   const bottomRow = Math.max(selection.startRow, selection.endRow);
 
   return {
-    x: leftCol * TILE_SIZE,
-    y: topRow * TILE_SIZE,
-    width: (rightCol - leftCol + 1) * TILE_SIZE,
-    height: (bottomRow - topRow + 1) * TILE_SIZE,
+    x: leftCol * tileSize,
+    y: topRow * tileSize,
+    width: (rightCol - leftCol + 1) * tileSize,
+    height: (bottomRow - topRow + 1) * tileSize,
   };
 }
 
@@ -138,7 +157,12 @@ export default function Home() {
   const [sliceName, setSliceName] = useState("chair_001");
   const [isManualName, setIsManualName] = useState(false);
   const [zoom, setZoom] = useState(2);
-  const [status, setStatus] = useState("Upload your sprite sheets to start slicing.");
+  const [tileSize, setTileSize] = useState(DEFAULT_TILE_SIZE);
+  const [xOffset, setXOffset] = useState(0);
+  const [yOffset, setYOffset] = useState(0);
+  const [status, setStatus] = useState(
+    "Upload your sprite sheets to start slicing.",
+  );
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
 
   useEffect(() => {
@@ -170,13 +194,27 @@ export default function Home() {
     if (!draft) {
       return null;
     }
-    return selectionToRect(draft);
-  }, [draft]);
+    return selectionToRect(draft, tileSize);
+  }, [draft, tileSize]);
 
   const currentSheet = useMemo(
     () => sheets.find((sheet) => sheet.id === draft?.sheetId) ?? null,
     [draft?.sheetId, sheets],
   );
+
+  const currentSourceRect = useMemo(() => {
+    if (!currentRect || !currentSheet) {
+      return null;
+    }
+
+    const maxX = Math.max(currentSheet.width - currentRect.width, 0);
+    const maxY = Math.max(currentSheet.height - currentRect.height, 0);
+    return {
+      ...currentRect,
+      x: Math.min(Math.max(currentRect.x - xOffset, 0), maxX),
+      y: Math.min(Math.max(currentRect.y - yOffset, 0), maxY),
+    };
+  }, [currentRect, currentSheet, xOffset, yOffset]);
 
   const groupedCounts = useMemo(() => {
     return savedSlices.reduce<Record<string, number>>((acc, slice) => {
@@ -213,31 +251,31 @@ export default function Home() {
     }
 
     const entries = await Promise.all(
-      Array.from(files).map(
-        async (file): Promise<Sheet | null> => {
-          if (file.type !== "image/png") {
-            return null;
-          }
+      Array.from(files).map(async (file): Promise<Sheet | null> => {
+        if (file.type !== "image/png") {
+          return null;
+        }
 
-          const url = URL.createObjectURL(file);
-          try {
-            const image = await createImage(url);
-            return {
-              id: crypto.randomUUID(),
-              name: file.name,
-              url,
-              width: image.naturalWidth,
-              height: image.naturalHeight,
-            };
-          } catch {
-            URL.revokeObjectURL(url);
-            return null;
-          }
-        },
-      ),
+        const url = URL.createObjectURL(file);
+        try {
+          const image = await createImage(url);
+          return {
+            id: crypto.randomUUID(),
+            name: file.name,
+            url,
+            width: image.naturalWidth,
+            height: image.naturalHeight,
+          };
+        } catch {
+          URL.revokeObjectURL(url);
+          return null;
+        }
+      }),
     );
 
-    const validEntries = entries.filter((entry): entry is Sheet => entry !== null);
+    const validEntries = entries.filter(
+      (entry): entry is Sheet => entry !== null,
+    );
     if (validEntries.length === 0) {
       setStatus("No valid PNG files were loaded.");
       return;
@@ -249,16 +287,20 @@ export default function Home() {
     });
 
     setSavedSlices((previous) =>
-      previous.filter((slice) => validEntries.some((sheet) => sheet.id === slice.sheetId)),
+      previous.filter((slice) =>
+        validEntries.some((sheet) => sheet.id === slice.sheetId),
+      ),
     );
     imageCacheRef.current.clear();
     setDraft(null);
     setDrag(null);
-    setStatus(`Loaded ${validEntries.length} sheet(s). Drag on a sheet to select tiles.`);
+    setStatus(
+      `Loaded ${validEntries.length} sheet(s). Drag on a sheet to select tiles.`,
+    );
   }
 
   function startDrag(event: MouseEvent<HTMLDivElement>, sheet: Sheet) {
-    const { col, row } = getCellFromMouse(event, sheet, zoom);
+    const { col, row } = getCellFromMouse(event, sheet, zoom, tileSize);
     const nextSelection: DragSelection = {
       sheetId: sheet.id,
       startCol: col,
@@ -274,7 +316,7 @@ export default function Home() {
     if (!drag || drag.sheetId !== sheet.id) {
       return;
     }
-    const { col, row } = getCellFromMouse(event, sheet, zoom);
+    const { col, row } = getCellFromMouse(event, sheet, zoom, tileSize);
     const nextSelection: DragSelection = {
       ...drag,
       endCol: col,
@@ -292,7 +334,7 @@ export default function Home() {
   }
 
   function saveCurrentSelection() {
-    if (!draft || !currentRect || !currentSheet) {
+    if (!draft || !currentSourceRect || !currentSheet) {
       return;
     }
 
@@ -301,10 +343,10 @@ export default function Home() {
       name: safeFileName(sliceName),
       category: selectedType,
       sheetId: currentSheet.id,
-      x: currentRect.x,
-      y: currentRect.y,
-      width: currentRect.width,
-      height: currentRect.height,
+      x: currentSourceRect.x,
+      y: currentSourceRect.y,
+      width: currentSourceRect.width,
+      height: currentSourceRect.height,
       createdAt: new Date().toISOString(),
     };
 
@@ -369,7 +411,9 @@ export default function Home() {
         duplicateCounter.set(duplicateKey, duplicateIndex + 1);
 
         const fileName =
-          duplicateIndex === 0 ? `${baseName}.png` : `${baseName}-${duplicateIndex + 1}.png`;
+          duplicateIndex === 0
+            ? `${baseName}.png`
+            : `${baseName}-${duplicateIndex + 1}.png`;
 
         zip.file(`${folder}/${fileName}`, blob);
       }
@@ -378,7 +422,9 @@ export default function Home() {
         "manifest.json",
         JSON.stringify(
           {
-            tileSize: TILE_SIZE,
+            tileSize,
+            xOffset,
+            yOffset,
             generatedAt: new Date().toISOString(),
             slices: savedSlices,
           },
@@ -391,7 +437,8 @@ export default function Home() {
       downloadBlob(blob, "sprite-slices.zip");
       setStatus("Export complete. Downloaded sprite-slices.zip");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown export failure";
+      const message =
+        error instanceof Error ? error.message : "Unknown export failure";
       setStatus(`Export failed: ${message}`);
     }
   }
@@ -404,15 +451,17 @@ export default function Home() {
             Sprite Sheet Divider and Exporter
           </h1>
           <p className="mt-2 text-sm font-medium text-slate-700 sm:text-base">
-            Upload your PNG sheets, drag to select rectangles snapped to 16px tiles, save each
-            slice by name, then export grouped folders by size.
+            Upload your PNG sheets, drag to select rectangles snapped to tile
+            size, save each slice by name, then export grouped folders by size.
           </p>
           <p className="mt-2 text-sm font-semibold text-slate-600">{status}</p>
         </header>
 
         <section className="grid gap-6 lg:grid-cols-[360px_1fr]">
           <aside className="rounded-2xl border border-sky-200 bg-white/90 p-5 shadow-[0_8px_25px_-14px_rgba(2,132,199,0.65)]">
-            <label className="block text-sm font-bold text-slate-700">Sprite sheets (PNG)</label>
+            <label className="block text-sm font-bold text-slate-700">
+              Sprite sheets (PNG)
+            </label>
             <input
               type="file"
               accept=".png,image/png"
@@ -434,16 +483,104 @@ export default function Home() {
               className="mt-2 w-full"
             />
 
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Tile size (px)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={512}
+              step={1}
+              value={tileSize}
+              onChange={(event) => {
+                const nextValue = Number(event.target.value);
+                if (!Number.isFinite(nextValue)) {
+                  return;
+                }
+                setTileSize(Math.min(Math.max(Math.round(nextValue), 1), 512));
+              }}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Image X offset (px)
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="range"
+                min={-256}
+                max={256}
+                step={1}
+                value={xOffset}
+                onChange={(event) => setXOffset(Number(event.target.value))}
+                className="w-full"
+              />
+              <input
+                type="number"
+                min={-2048}
+                max={2048}
+                step={1}
+                value={xOffset}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  if (!Number.isFinite(nextValue)) {
+                    return;
+                  }
+                  setXOffset(Math.round(nextValue));
+                }}
+                className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+              />
+            </div>
+
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Image Y offset (px)
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="range"
+                min={-256}
+                max={256}
+                step={1}
+                value={yOffset}
+                onChange={(event) => setYOffset(Number(event.target.value))}
+                className="w-full"
+              />
+              <input
+                type="number"
+                min={-2048}
+                max={2048}
+                step={1}
+                value={yOffset}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  if (!Number.isFinite(nextValue)) {
+                    return;
+                  }
+                  setYOffset(Math.round(nextValue));
+                }}
+                className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+              />
+            </div>
+
             <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
               <h2 className="text-sm font-black uppercase tracking-wide text-emerald-800">
                 Draft Selection
               </h2>
               {draft && currentRect && currentSheet ? (
                 <>
-                  <p className="mt-2 text-sm font-medium text-emerald-950">Sheet: {currentSheet.name}</p>
-                  <p className="text-sm text-emerald-900">
-                    X:{currentRect.x} Y:{currentRect.y} W:{currentRect.width} H:{currentRect.height}
+                  <p className="mt-2 text-sm font-medium text-emerald-950">
+                    Sheet: {currentSheet.name}
                   </p>
+                  <p className="text-sm text-emerald-900">
+                    X:{currentRect.x} Y:{currentRect.y} W:{currentRect.width} H:
+                    {currentRect.height}
+                  </p>
+                  {currentSourceRect && (
+                    <p className="text-xs text-emerald-800">
+                      Source after offset: X {currentSourceRect.x}, Y{" "}
+                      {currentSourceRect.y}
+                    </p>
+                  )}
                   <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-emerald-900">
                     Type
                   </label>
@@ -471,7 +608,9 @@ export default function Home() {
                     placeholder="slice name"
                     className="mt-3 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm"
                   />
-                  <p className="mt-2 text-xs text-emerald-900">Suggested: {suggestedName}</p>
+                  <p className="mt-2 text-xs text-emerald-900">
+                    Suggested: {suggestedName}
+                  </p>
                   <button
                     type="button"
                     onClick={saveCurrentSelection}
@@ -481,7 +620,9 @@ export default function Home() {
                   </button>
                 </>
               ) : (
-                <p className="mt-2 text-sm text-emerald-900">Drag over any sheet to create a draft.</p>
+                <p className="mt-2 text-sm text-emerald-900">
+                  Drag over any sheet to create a draft.
+                </p>
               )}
             </div>
 
@@ -503,9 +644,14 @@ export default function Home() {
                   Object.entries(groupedCounts)
                     .sort((a, b) => a[0].localeCompare(b[0]))
                     .map(([size, count]) => (
-                      <li key={size} className="flex items-center justify-between">
+                      <li
+                        key={size}
+                        className="flex items-center justify-between"
+                      >
                         <span>{size}</span>
-                        <span className="rounded bg-amber-100 px-2 py-0.5 font-semibold">{count}</span>
+                        <span className="rounded bg-amber-100 px-2 py-0.5 font-semibold">
+                          {count}
+                        </span>
                       </li>
                     ))
                 ) : (
@@ -521,11 +667,23 @@ export default function Home() {
               <ul className="mt-2 max-h-64 space-y-2 overflow-auto pr-1">
                 {savedSlices.length > 0 ? (
                   savedSlices.map((slice) => {
-                    const sheetName = sheets.find((sheet) => sheet.id === slice.sheetId)?.name ?? "Unknown";
+                    const sheetName =
+                      sheets.find((sheet) => sheet.id === slice.sheetId)
+                        ?.name ?? "Unknown";
                     return (
-                      <li key={slice.id} className="rounded-lg border border-slate-200 bg-white p-2 text-sm">
-                        <div className="font-bold text-slate-900">{slice.name}</div>
-                        <div className="text-slate-600">Type: {slice.category ?? inferCategoryFromName(slice.name) ?? "custom"}</div>
+                      <li
+                        key={slice.id}
+                        className="rounded-lg border border-slate-200 bg-white p-2 text-sm"
+                      >
+                        <div className="font-bold text-slate-900">
+                          {slice.name}
+                        </div>
+                        <div className="text-slate-600">
+                          Type:{" "}
+                          {slice.category ??
+                            inferCategoryFromName(slice.name) ??
+                            "custom"}
+                        </div>
                         <div className="text-slate-700">
                           {slice.width}x{slice.height} on {sheetName}
                         </div>
@@ -551,8 +709,13 @@ export default function Home() {
           <section className="space-y-5">
             {sheets.length > 0 ? (
               sheets.map((sheet) => {
-                const savedForSheet = savedSlices.filter((slice) => slice.sheetId === sheet.id);
-                const draftRect = draft?.sheetId === sheet.id ? selectionToRect(draft) : null;
+                const savedForSheet = savedSlices.filter(
+                  (slice) => slice.sheetId === sheet.id,
+                );
+                const draftRect =
+                  draft?.sheetId === sheet.id
+                    ? selectionToRect(draft, tileSize)
+                    : null;
 
                 return (
                   <article
@@ -560,7 +723,9 @@ export default function Home() {
                     className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-[0_8px_20px_-14px_rgba(15,23,42,0.55)]"
                   >
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="text-lg font-black text-slate-900">{sheet.name}</h2>
+                      <h2 className="text-lg font-black text-slate-900">
+                        {sheet.name}
+                      </h2>
                       <p className="text-sm font-semibold text-slate-700">
                         {sheet.width}x{sheet.height}px
                       </p>
@@ -573,7 +738,10 @@ export default function Home() {
                         onMouseUp={stopDrag}
                         onMouseLeave={stopDrag}
                         className="relative cursor-crosshair"
-                        style={{ width: `${sheet.width * zoom}px`, height: `${sheet.height * zoom}px` }}
+                        style={{
+                          width: `${sheet.width * zoom}px`,
+                          height: `${sheet.height * zoom}px`,
+                        }}
                       >
                         <NextImage
                           src={sheet.url}
@@ -582,6 +750,9 @@ export default function Home() {
                           unoptimized
                           draggable={false}
                           className="pointer-events-none absolute inset-0 h-full w-full select-none"
+                          style={{
+                            transform: `translate(${xOffset * zoom}px, ${yOffset * zoom}px)`,
+                          }}
                         />
 
                         <div
@@ -589,7 +760,7 @@ export default function Home() {
                           style={{
                             backgroundImage:
                               "linear-gradient(to right, rgba(15,23,42,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.18) 1px, transparent 1px)",
-                            backgroundSize: `${TILE_SIZE * zoom}px ${TILE_SIZE * zoom}px`,
+                            backgroundSize: `${tileSize * zoom}px ${tileSize * zoom}px`,
                           }}
                         />
 
@@ -598,8 +769,8 @@ export default function Home() {
                             key={slice.id}
                             className="pointer-events-none absolute border-2 border-cyan-500 bg-cyan-400/20"
                             style={{
-                              left: `${slice.x * zoom}px`,
-                              top: `${slice.y * zoom}px`,
+                              left: `${(slice.x + xOffset) * zoom}px`,
+                              top: `${(slice.y + yOffset) * zoom}px`,
                               width: `${slice.width * zoom}px`,
                               height: `${slice.height * zoom}px`,
                             }}
@@ -624,7 +795,8 @@ export default function Home() {
               })
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm font-semibold text-slate-600">
-                Upload your sprite sheets to start selecting tile-aligned rectangles.
+                Upload your sprite sheets to start selecting tile-aligned
+                rectangles.
               </div>
             )}
           </section>
